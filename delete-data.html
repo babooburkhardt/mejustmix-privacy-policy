@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Delete Account - MeJustMix</title>
+    <link rel="stylesheet" href="https://cdn.simplecss.org/simple.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .error {
+            color: #d32f2f;
+            background: #ffebee;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+
+        .success {
+            color: #388e3c;
+            background: #e8f5e9;
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+        }
+
+        button.danger {
+            background-color: #d32f2f;
+            border-color: #d32f2f;
+            color: white;
+        }
+
+        button.danger:hover {
+            background-color: #b71c1c;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>MeJustMix Data Deletion</h1>
+        <p>Manage your account and data privacy.</p>
+    </header>
+
+    <main>
+        <!-- Step 1: Login -->
+        <div id="login-section">
+            <p>To verify your identity and delete your account, please sign in with your email. We will send you a
+                secure Magic Link.</p>
+            <form id="login-form">
+                <p>
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" required placeholder="you@example.com">
+                </p>
+                <button type="submit">Send Magic Link</button>
+            </form>
+        </div>
+
+        <!-- Step 2: Confirm Deletion -->
+        <div id="delete-section" class="hidden">
+            <h3>Account Verified</h3>
+            <p>You are signed in as: <strong id="user-email"></strong></p>
+
+            <div class="notice">
+                <strong>Warning:</strong> This action is permanent. All your data, including:
+                <ul>
+                    <li>Saved Recipes</li>
+                    <li>Collections</li>
+                    <li>Profile Data</li>
+                    <li>Comments & Likes</li>
+                </ul>
+                will be immediately and permanently deleted.
+            </div>
+
+            <button id="delete-btn" class="danger">Permanently Delete My Account</button>
+            <p><a href="#" onclick="signOut()">Sign Out</a></p>
+        </div>
+
+        <!-- Status Messages -->
+        <div id="message" class="hidden"></div>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 MeJustMix. All rights reserved.</p>
+    </footer>
+
+    <script>
+        // --- CONFIGURATION ---
+        const SUPABASE_URL = 'https://sxtuiinaaayqtqlujoaf.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_fSbZVTbjnvp-sSW3bn2hvA_Ba8kPxvA';
+        // ---------------------
+
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const loginForm = document.getElementById('login-form');
+        const loginSection = document.getElementById('login-section');
+        const deleteSection = document.getElementById('delete-section');
+        const userEmailSpan = document.getElementById('user-email');
+        const messageDiv = document.getElementById('message');
+        const deleteBtn = document.getElementById('delete-btn');
+
+        // Check for existing session
+        async function checkSession() {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                showDeleteUI(session.user);
+            } else {
+                // Check if we just returned from a magic link
+                // Supabase JS auto-handles the URL fragment parsing
+            }
+        }
+
+        // Handle Login
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            showMessage('Sending login link...', 'info');
+
+            const { error } = await supabase.auth.signInWithOtp({
+                email: email,
+                options: {
+                    // Redirect back to this page
+                    emailRedirectTo: window.location.href
+                }
+            });
+
+            if (error) {
+                showMessage(error.message, 'error');
+            } else {
+                showMessage('Check your email for the login link!', 'success');
+                loginForm.reset();
+            }
+        });
+
+        // Handle Deletion
+        deleteBtn.addEventListener('click', async () => {
+            if (!confirm('Are you absolutely sure? This cannot be undone.')) return;
+
+            deleteBtn.disabled = true;
+            deleteBtn.innerText = "Deleting...";
+            showMessage("", "hidden");
+
+            try {
+                // Call the secure RPC function
+                const { error } = await supabase.rpc('delete_own_account');
+
+                if (error) throw error;
+
+                // Sign out locally
+                await supabase.auth.signOut();
+
+                loginSection.classList.add('hidden');
+                deleteSection.classList.add('hidden');
+                showMessage('Account explicitly deleted. Goodbye.', 'success');
+
+            } catch (error) {
+                console.error(error);
+                showMessage('Deletion failed: ' + error.message, 'error');
+                deleteBtn.disabled = false;
+                deleteBtn.innerText = "Permanently Delete My Account";
+            }
+        });
+
+        // UI Helpers
+        function showDeleteUI(user) {
+            loginSection.classList.add('hidden');
+            deleteSection.classList.remove('hidden');
+            userEmailSpan.innerText = user.email;
+            showMessage('', 'hidden'); // Clear any login msgs
+        }
+
+        function showMessage(text, type) {
+            messageDiv.innerText = text;
+            messageDiv.className = type === 'hidden' ? 'hidden' : type;
+        }
+
+        window.signOut = async () => {
+            await supabase.auth.signOut();
+            window.location.reload();
+        };
+
+        // Initialize
+        if (SUPABASE_URL === 'YOUR_SUPABASE_URL') {
+            showMessage('Error: Supabase configuration missing. Editor must populate credentials.', 'error');
+        } else {
+            checkSession();
+
+            // Listen for auth state changes (e.g. magic link redirect completion)
+            supabase.auth.onAuthStateChange((event, session) => {
+                if (event === 'SIGNED_IN' && session) {
+                    showDeleteUI(session.user);
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
